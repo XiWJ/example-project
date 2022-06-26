@@ -16,6 +16,7 @@ include(libigl)
 
 # sub dir
 add_subdirectory(${PROJECT_SOURCE_DIR}/src/01_Normals)
+add_subdirectory(${PROJECT_SOURCE_DIR}/src/99_RayTracingInOneWeekend)
 
 # # Add your project files
 # file(GLOB SRC_FILES *.cpp)
