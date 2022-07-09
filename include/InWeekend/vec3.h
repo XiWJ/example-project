@@ -171,9 +171,17 @@ vec3 random_in_hemisphere(const vec3& normal)
         return -in_unit_sphere;
 }
 
-vec3 reflect(const vec3& v, const vec3& n)
+vec3 reflect(const vec3& ray_in, const vec3& n)
 {
-    return v - 2 * dot(v, n) * n;
+    return ray_in - 2 * dot(ray_in, n) * n;
+}
+
+vec3 refract(const vec3& ray_in, const vec3& n, double etai_over_etat) 
+{
+    auto cos_theta = fmin(dot(-ray_in, n), 1.0);
+    vec3 r_out_vertical =  etai_over_etat * (ray_in + cos_theta * n); // R_vertical
+    vec3 r_out_parallel = -sqrt(fabs(1.0 - r_out_vertical.length_squared())) * n; // R_parallel
+    return r_out_vertical + r_out_parallel; 
 }
 
 #endif

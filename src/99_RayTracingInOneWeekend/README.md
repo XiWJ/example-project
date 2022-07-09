@@ -379,4 +379,230 @@
 
     ![](./pics/07_diffuse_materials.png)
 
-## 08 未完待续。。。
+## 08 Metal Materials
+- Materials Abstract Class
+
+    - 材质抽象类设计目的：用以被各不同材质类继承，重写`scatter`函数实现不同材质对光线反射
+    
+    ```C++
+    class material {
+    public:
+        virtual bool scatter(
+                const ray& r_in, const hit_record& rec, color& attenuation, ray& scattered
+            ) const = 0;
+    };
+    ```
+
+- Metal Material
+
+    - 金属材质特性：镜面反射
+
+    ![refection](./pics/reflection.jpg)
+
+    绿色光线v入射，红色光线出射，C++代码表示
+
+    ```C++
+    vec3 reflect(const vec3& v, const vec3& n) {
+        return v - 2 * dot(v, n) * n; // dot(v, n) * n -- B vector
+    }
+    ```
+
+- Ray at Metal surface
+
+    - 当光线打到金属表面时，发生如上镜面反射。对于`Metal`类来说，重写`scatter`函数：
+
+    ```C++
+    class Metal: public Material
+    {
+    public:
+        color albedo;
+        Metal(const color& a): albedo(a) {}
+
+        virtual bool scatter(const ray& ray_in, const hit_record& rec, color& attenuation, ray& scattered) const override
+        {
+            vec3 reflected = reflect(unit_vector(ray_in.direction()), rec.normal);
+            scattered = ray(rec.p, reflected); // 反射入射光线
+            attenuation = albedo; // 衰减
+            return (dot(scattered.direction(), rec.normal) > 0);
+        }
+    };
+    ```
+
+    - 光追上色，ray_color函数
+
+    ```C++
+    color ray_color(const ray& r, const hittable& world, int depth)
+    {
+        ...
+
+        if (world.hit(r, 0.001, infinity, rec))
+        {
+            ray scattered; // 镜面反射光线
+            color attenuation; // 颜色衰减
+            if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))
+                return attenuation * ray_color(scattered, world, depth - 1); //衰减 * 镜面反射光线打到其他地方
+            return color(0, 0, 0);
+        }
+        
+        ...
+    }
+    ```
+
+    - 效果:
+
+    ![](./pics/08_metal_materials.png)
+
+- Fuzz Metal
+
+    - 带有粗糙质感的金属：给反射方向加个随机扰动，扰动半径`fuzz`取值[0, 1]之间，取值越大，表面粗糙质感越强烈
+
+    ![](./pics/reflect-fuzzy.jpg)
+
+    - 扰动加入
+
+    ```C++
+    class Metal: public Material
+    {
+    public:
+        
+        ... 
+
+        virtual bool scatter(const ray& ray_in, const hit_record& rec, color& attenuation, ray& scattered) const override
+        {
+            vec3 reflected = reflect(unit_vector(ray_in.direction()), rec.normal);
+            scattered = ray(rec.p, reflected + fuzz * random_in_unit_sphere()); // fuzz 表示粗糙质感的扰动半径，半径越大粗糙感越强
+            attenuation = albedo;
+            return (dot(scattered.direction(), rec.normal) > 0);
+        }
+    };
+    ```
+
+    - 效果:
+
+    ```C++
+    // in 08_metal_materials.cpp
+    // World
+    ...
+    auto material_left   = make_shared<Metal>(color(0.8, 0.8, 0.8), 0.3); // fuzz = 0.3
+    auto material_right  = make_shared<Metal>(color(0.8, 0.6, 0.2), 1.0); // fuzz = 1.0
+    ...
+    ```
+
+    ![](./pics/08_metal_fuzz_materials.png)
+
+
+## 09_Dielectrics
+
+- 绝缘体：一条光线打过来，会发生**折射**和**反射**
+
+    ![](./pics/refraction.jpg)
+
+- Snell Law
+
+    - 斯奈尔定律：$\eta \cdot \sin{\theta} = \eta' \cdot \sin{\theta'}$
+
+    - 空气 $\eta = 1.0$
+
+- 折射方向
+
+    - 计算折射反向的数学公式推导见[4.2 折射方向的计算
+](https://zhuanlan.zhihu.com/p/144403005)
+
+    - 拿来主义：
+
+    $$ \vec{t} = \frac{\eta}{\eta'} (\vec{v} - (\vec{t} \cdot \mathbf{n}) \mathbf{n} ) - \mathbf{n} \sqrt{1 - (\frac{\eta}{\eta'} (\vec{v} - (\vec{v} \cdot \mathbf{n}) \mathbf{n}))^2}, $$
+
+    - 全反射：**注意**，并不是所有的光线打过来都会有折射，当入射方向的角度超过一定范围后，是**全反射**了，这个范围按照如下公式确定：
+
+    $$ \sin{\theta} = \sqrt{1 - \vec{v} \cdot \mathbf{n}} \leq 1.0. $$
+
+    - 综上，折射方向C++表示如下
+
+    ```C++
+    class Dielectric : public Material {
+    public:
+        double ir; // 当前材质的\eta
+        Dielectric(double index_of_refraction): ir(index_of_refraction) {}
+
+        virtual bool scatter(const ray& ray_in, const hit_record& rec, color& attenuation, ray& scattered) const override 
+        {
+            attenuation = color(1.0, 1.0, 1.0);
+            double refraction_ratio  = rec.front_face? (1.0/ir): ir; // \eta / \eta'
+
+            vec3 unit_direction = unit_vector(ray_in.direction());
+            double cos_theta = ffmin(dot(-unit_direction, rec.normal), 1.0);
+            double sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+            
+            bool cannot_refract = refraction_ratio * sin_theta > 1.0; // 是否能够折射还是全反射了
+            vec3 direction;
+            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > random_double())
+                direction = reflect(unit_direction, rec.normal); // 反射方向
+            else
+                direction = refract(unit_direction, rec.normal, refraction_ratio); // 折射方向
+
+            scattered = ray(rec.p, direction);
+            return true;
+        }
+    }
+
+    // 折射方向
+    vec3 refract(const vec3& ray_in, const vec3& n, double etai_over_etat) 
+    {
+        auto cos_theta = fmin(dot(-ray_in, n), 1.0);
+        vec3 r_out_vertical =  etai_over_etat * (ray_in + cos_theta * n); // R_vertical
+        vec3 r_out_parallel = -sqrt(fabs(1.0 - r_out_vertical.length_squared())) * n; // R_parallel
+        return r_out_vertical + r_out_parallel; 
+    }
+    ```
+
+- reflect probability -- 反射概率
+
+    - What is: 对于一个绝缘体来说，当满足折射条件（不发生全反射）后，并不是一定发生折射，会有一个概率发生反射，这个反射的概率跟很多因素（折射率、入射角度）有关，采用**schlick**简化之后：
+
+    $$ Rp = R_0 + (1 - R_0) (1 - \cos{\theta})^5, R_0 = (\frac{\eta - \eta'}{\eta + \eta'})^2. $$
+
+    ```C++
+    static double reflectance(double cosine, double ref_idx)
+    {
+        auto r0 = (1 - ref_idx) / (1 + ref_idx);
+        r0 = r0 * r0;
+        return r0 + (1 - r0) * pow((1 - cosine), 5);
+    }
+    ```
+
+    - 上色
+
+    ```C++
+    virtual bool scatter(const ray& ray_in, const hit_record& rec, color& attenuation, ray& scattered) const override 
+    {
+        ...
+        
+        bool cannot_refract = refraction_ratio * sin_theta > 1.0;
+        vec3 direction;
+        // 随机生成数，判断是否在反射概率范围内
+        if (cannot_refract || reflectance(cos_theta, refraction_ratio) > random_double())
+            direction = reflect(unit_direction, rec.normal);
+        else
+            direction = refract(unit_direction, rec.normal, refraction_ratio);
+
+        ...
+    }
+
+    // in 09_Dielectrics.cpp
+    for (int j = image_height-1; j >= 0; --j) 
+    {
+        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
+        for (int i = 0; i < image_width; ++i) 
+        {
+            color pixel_color(0, 0, 0);
+            for (int s = 0; s < samples_per_pixel; ++ s)
+            {
+                auto u = (i + random_double()) / (image_width - 1);
+                auto v = (j + random_double()) / (image_height - 1);
+                ray r = cam.get_ray(u, v);
+                pixel_color += ray_color(r, world, max_depth);
+            }
+            pixel_color.write_color(std::cout, samples_per_pixel);
+        }
+    }
+    ```

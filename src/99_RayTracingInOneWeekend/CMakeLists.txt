@@ -25,6 +25,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/05_hittable_objects)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/06_antialiasing)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/07_diffuse_materials)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/08_metal_materials)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/09_Dielectrics)
 
 
 # # Add your project files
