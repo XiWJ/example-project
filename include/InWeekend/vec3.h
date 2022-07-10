@@ -129,6 +129,11 @@ inline vec3 operator/(vec3 v, double t)
     return (1 / t) * v;
 }
 
+inline bool operator==(vec3 v, vec3 u)
+{
+    return v[0] == u[0] && v[1] == u[1] && v[2] == u[2];
+}
+
 inline double dot(const vec3 &u, const vec3 &v)
 {
     return u.e[0] * v.e[0] + u.e[1] * v.e[1] + u.e[2] * v.e[2];
@@ -169,6 +174,17 @@ vec3 random_in_hemisphere(const vec3& normal)
         return in_unit_sphere;
     else
         return -in_unit_sphere;
+}
+
+vec3 random_in_unit_disk()
+{
+    while (true)
+    {
+        auto p = vec3(random_double(-1, 1), random_double(-1, 1), 0);
+        if (p.length_squared() >= 1)
+            continue;
+        return p;
+    }
 }
 
 vec3 reflect(const vec3& ray_in, const vec3& n)

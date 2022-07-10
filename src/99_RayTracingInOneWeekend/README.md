@@ -491,7 +491,7 @@
     ![](./pics/08_metal_fuzz_materials.png)
 
 
-## 09_Dielectrics
+## 09 Dielectrics
 
 - 绝缘体：一条光线打过来，会发生**折射**和**反射**
 
@@ -570,7 +570,7 @@
     }
     ```
 
-    - 上色
+    - 上色：一个像素打出去N多个射线，接着计算发生折射和反射的着色，最后求这N条光线返回颜色的平均。
 
     ```C++
     virtual bool scatter(const ray& ray_in, const hit_record& rec, color& attenuation, ray& scattered) const override 
@@ -589,13 +589,15 @@
     }
 
     // in 09_Dielectrics.cpp
+    ...
+
     for (int j = image_height-1; j >= 0; --j) 
     {
-        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
         for (int i = 0; i < image_width; ++i) 
         {
             color pixel_color(0, 0, 0);
-            for (int s = 0; s < samples_per_pixel; ++ s)
+            // 一个像素打出去N多个射线，最后求平均
+            for (int s = 0; s < samples_per_pixel; ++ s) 
             {
                 auto u = (i + random_double()) / (image_width - 1);
                 auto v = (j + random_double()) / (image_height - 1);
@@ -605,4 +607,183 @@
             pixel_color.write_color(std::cout, samples_per_pixel);
         }
     }
+
+    ...
+    
     ```
+
+    - 效果：
+
+    ![](./pics/09_Dielectrics.png)
+
+## 10 LookAt & Depth-of-field
+
+- LookAt
+
+    - What is: 当相机摆放在世界空间下的任意位置，**面朝**着渲染场景，**LookAt**就是来描述这个面朝的“姿态”。
+
+    ![](./pics/lookAt.PNG)
+
+    - 坐标轴描述：实际上**面朝**可以理解为在相机处建立一套新的局部坐标系，这个坐标系的三个坐标轴`u-v-g`，表示相机朝向的姿态。
+        
+        - `g-axis`: 从场景原点$\mathbf{O}$指向相机中心方向
+
+        - `v-axis`: 垂直`g-axis`和`up`向量组成的平面的向量，可以通过`g x up`获得。其中`up`在这里可以用(0, 1, 0)
+
+        - `u-axis`: 垂直`g-axis`和`v-axis`向量组成的平面的向量，`v x g`获得。
+
+        ```C++
+        origin = point3(0, 0, 0);
+        g_ = unit_vector(origin - camera_pos);
+        v_ = unit_vector(cross(g_, up));
+        u_ = unit_vector(cross(v_, g_));
+        ```
+    
+    - 形象化理解，就像人脸对着场景内物体（比如茶杯子）看，鼻子正对着茶杯看做是`g-axis`, 右耳朵看做是`v-axis`, 天灵盖朝上看做`u-axis`, 这三个轴可以完整反映出人脸对着茶杯物体姿态。
+
+    - LookAt矩阵：上述描述的是相机看场景的“姿态”，还缺少一个重要信息：**相机位置**$\mathbf{p}$。加上这个信息，可以将场景内物体从世界坐标系转换到该相机坐标系中。
+
+        - 相机位置$\mathbf{P} = (P_x, P_y, P_z)$.
+
+        - 相机**面朝**局部坐标系`uvg`: $[\mathbf{\vec{v}}, \mathbf{\vec{u}}, \mathbf{\vec{g}}]$
+
+        - LookAt矩阵：
+
+        $$ \mathbf{M}_{lookAt} = 
+        \begin{bmatrix}
+        v_x & v_y & v_z & 0 \\
+        u_x & u_y & u_z & 0 \\
+        g_x & g_y & g_z & 0 \\
+        0 & 0 & 0 & 1
+        \end{bmatrix}
+        \begin{bmatrix}
+        1 & 0 & 0 & -P_x \\
+        0 & 1 & 0 & -P_y \\
+        0 & 0 & 1 & -P_z \\
+        0 & 0 & 0 & 1
+        \end{bmatrix}
+        $$
+
+        - World -> Camera: $\mathbf{X}_{cam} = \mathbf{M}_{lookAt} \mathbf{X}_{world}$
+
+- fov & aspect
+
+    - fov
+
+        - field-of-view, 反映相机能够看到场景范围，弧度表示，值越大看的场景范围越大。
+
+        - $\tan(fov) = \frac{h}{2d}$, `h`为视口高度，`d`为场景原点$\mathbf{O}$到相机中心点（相机位置）$\mathbf{P}$的距离。
+
+    - aspect
+
+        - 宽高比
+
+        - aspect = (view_width / view_height) = (image_width / image_height)
+
+    - 用途：
+
+        - 已知图像aspect和相机fov，来计算视口大小：
+
+        ```C++
+        double theta = degree_to_radius(fov);
+        double camera_origin_dist = (origin - camera_pos).length();
+        double viewport_height = 2.0 * tan(theta / 2.0) * camera_origin_dist;
+        double viewport_width = aspect * viewport_height;
+        ```
+
+- Ray color
+
+    - ray from any camera position: 从相机中心$\mathbf{P}$打出的射线`ray`，方向朝向场景原点$\mathbf{O}$
+
+    ```C++
+    Camera(double f, double a, point3 camera_pos, vec3 up): fov(f), aspect(a), camera_position(camera_pos)
+    {
+        double theta = degree_to_radius(fov);
+        double camera_origin_dist = (origin - camera_pos).length();
+        double viewport_height = 2.0 * tan(theta / 2.0) * camera_origin_dist;
+        double viewport_width = aspect * viewport_height;
+
+        origin = point3(0, 0, 0);
+        g_ = unit_vector(origin - camera_pos);
+        v_ = unit_vector(cross(g_, up));
+        u_ = unit_vector(cross(v_, g_));
+
+        horizontal = viewport_width * v_;
+        vertical = viewport_height * u_;
+        lower_left_corner = origin - horizontal / 2 - vertical / 2; // 视口左下角
+    }
+
+    ray get_ray(double u, double v) const
+    {
+        // 射线起点相机中心，朝向场景原点
+        return ray(camera_position, lower_left_corner + u * horizontal + v * vertical - camera_position); 
+    }
+
+    double fov = 90.0;
+    point3 camera_pos = point3(3, 3, 2);
+    Camera cam(fov, aspect_ratio, aperture, camera_pos, vec3(0, 1, 0));
+
+    for (int j = image_height-1; j >= 0; --j) 
+    {
+        for (int i = 0; i < image_width; ++i) 
+        {
+            ...
+            pixel_color.write_color(std::cout, samples_per_pixel);
+        }
+    }
+    ```
+
+    - color效果:
+
+    ![](./pics/10_positionable_camera.png)
+
+- depth-of-field
+
+    - 景深：对于一个相机，能够清晰地看到场景内物体是有一定范围的，这个范围就是景深（depth-of-field），超过景深范围，物体就会看做模糊。
+
+    ![](./pics/dof1.jpg) ![](./pics/dof2.jpg)
+
+    上两张图来源[12.4 景深(Depth of Field)](https://zhuanlan.zhihu.com/p/400260362)
+
+    - 影响因素：光圈（aperture）-- 简单理解，就是个Lens, 其直径大小为aperture
+    
+        - 光圈越小，景深越大，焦点处深度越大，能够看到场景物体越清晰，反之是模糊
+
+        ![](./pics/cam-film-plane.jpg)
+
+    - C++描述
+
+    ```C++
+    vec3 random_in_unit_disk()
+    {
+        while (true)
+        {
+            auto p = vec3(random_double(-1, 1), random_double(-1, 1), 0);
+            if (p.length_squared() >= 1)
+                continue;
+            return p;
+        }
+    }
+
+    vec3 rd = len_radius * random_in_unit_disk(); // len_radius = aperture / 2.0
+    vec3 offset = v_ * rd.x() + u_ * rd.y();
+    ray(camera_position + offset, lower_left_corner + u * horizontal + v * vertical - camera_position - offset);
+    ```
+    
+    **说白了**，就是射线`ray`的起点会有个随机扰动`offset`，扰动的半径为`aperture / 2.0`
+
+    - 超过景深模糊效果：
+
+    ```C++
+    ...
+
+    // Camera
+    double aperture = 2.0;
+    double fov = 20.0;
+    point3 camera_pos = point3(3, 3, 2);
+    Camera cam(fov, aspect_ratio, aperture, camera_pos, vec3(0, 1, 0));
+
+    ...
+    ```
+
+    ![](./pics/11_depth_of_field.png)
