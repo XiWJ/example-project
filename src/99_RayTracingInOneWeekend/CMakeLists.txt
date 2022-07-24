@@ -28,6 +28,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/08_metal_materials)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/09_Dielectrics)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/10_positionable_camera)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/11_depth_of_field)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/12_final_render)
 
 
 # # Add your project files

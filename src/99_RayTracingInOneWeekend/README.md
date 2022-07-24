@@ -787,3 +787,9 @@
     ```
 
     ![](./pics/11_depth_of_field.png)
+
+## 12 Final Render
+
+- 结合上面11节的内容，渲染一张包含非常多的spheres, 并且使用Lambertian, metal, dielectric材质效果：
+
+    ![](./pics/final_render.png)
